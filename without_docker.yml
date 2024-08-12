@@ -1,0 +1,49 @@
+stages:
+  - build
+  - test
+  - delivery
+  - deploy
+
+variables:
+  GOARCH: amd64
+  GOOS: linux
+  CGO_ENABLED: 0
+  DEPLOY_USER: gitlab-runner
+  HOST: 10.129.0.15
+
+build:
+  stage: build
+  image: golang:1.22.6
+  script:
+    - go build -o ./webserver
+    - echo "BUILD_JOB_ID=$CI_JOB_ID" >> build.env
+  artifacts:
+    paths:
+      - ./webserver
+    reports:
+      dotenv: build.env
+  tags:
+    - go-webserver
+
+test:
+  stage: test
+  script:
+    echo -e "Project ID is $CI_PROJECT_ID\nJob ID is $BUILD_JOB_ID\n"
+  tags:
+    - shell-task
+
+delivery:
+  stage: delivery
+  script:
+    - |
+      sudo ssh -i /home/gitlab-runner/.ssh/id_rsa gitlab-runner@10.129.0.15 "curl -X GET --location --output /var/www/webserver/artifacts.zip --header 'PRIVATE-TOKEN: $DEPLOY_TOKEN'  https://anestesia-tech.gitlab.yandexcloud.net/api/v4/projects/$CI_PROJECT_ID/jobs/$BUILD_JOB_ID/artifacts"
+  tags:
+    - shell-task
+
+deploy:
+  stage: deploy
+  script:
+    - sudo ssh -o StrictHostKeyChecking=no -i /home/gitlab-runner/.ssh/id_rsa $DEPLOY_USER@$HOST "bash -lc 'cd /var/www/webserver/ && unzip -o artifacts.zip && rm artifacts.zip && sudo systemctl restart webserver.service'"
+  tags:
+    - shell-task
+
